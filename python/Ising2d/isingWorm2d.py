@@ -1,6 +1,7 @@
 """
-Worm Algorithm for Ising 2D model.
+Worm Algorithm for 2D Ising model.
 By Christopher Wilson.
+Written in Python 2.7.
 
 Notes:
     The worm head is commonly referred to as 'ira', and the worm tail is
