@@ -20,21 +20,22 @@ class Observables(object):
         self.mean_energy2 = np.zeros_like(T_range)
 
 
-def ising2d_metropolis(T_start=1.27, T_end=3.27, T_step=0.25, mcsteps=1000, L=16):
+def ising2d_metropolis(T_start=2, T_end=2.5, T_step=0.1, mcsteps=10000, L=32):
     """
     temp = temperature [K].
     L = Length of grid.
     """
 
     def initialize_spins(L, T_start):
+        spin_array = np.ones((L, L, len(T_range)))
         if T_start>2:
             print('Using random spins for initial lattice.')
-            spin = np.random.random_integers(0, 1, (L, L, 1))
-            spin[spin==0] = -1
+            initial_array = np.random.random_integers(0, 1, (L, L))
+            initial_array[initial_array==0] = -1
+            spin_array[:,:,-1] = initial_array
         else:
             print('Using ordered spins for initial lattice.')
-            spin = np.ones((L, L, 1))
-        return spin
+        return spin_array
 
     def compute_mcsteps(spin, temperature, mcsteps, L):
         energy, energy2, magnetization, magnetization2 = 0, 0, 0, 0
@@ -58,31 +59,35 @@ def ising2d_metropolis(T_start=1.27, T_end=3.27, T_step=0.25, mcsteps=1000, L=16
             # vectorized approach to measuring observables.
             left_spin = np.roll(spin, -1, axis=1)
             lower_spin = np.roll(spin, 1, axis=0)
-            energy -= np.sum(spin*(left_spin+lower_spin))
-            energy2 += energy**2
+            E = -np.sum(spin*(left_spin+lower_spin))
+            energy += E
+            energy2 += E**2
             magnetization += np.sum(spin)
-            magnetization2 += magnetization**2
+            magnetization2 += np.sum(spin)**2
         return spin, [abs(magnetization), magnetization2], [energy, energy2]
 
-    # initialize observables and the spin lattice.
+    print('Initializing Metropolis Algorithm.')
     T_range = np.linspace(T_start, T_end, int((T_end-T_start)/T_step+1))
     observables = Observables(L, T_range, mcsteps)
     # store the final spin lattice configuration for each temperature iteration.
-    spin_array = np.tile(initialize_spins(L, T_start), (1, 1, len(T_range)))
+    spin_array = initialize_spins(L, T_start)
 
-    # run simulation.
     print ('Starting thermalization cycle ...')
     spin_array[:, :, 0], magnetization, energy = \
         compute_mcsteps(spin_array[:, :, 0], T_start, mcsteps, L)
+
     print ('Starting measurement cycle ...')
     for i, temperature in enumerate(T_range):
         spin_array[:, :, i], magnetization, energy = \
             compute_mcsteps(spin_array[:, :, i], temperature, mcsteps, L)
         observables.mean_magnetization[i] =  magnetization[0]/(mcsteps*L**2)
         observables.mean_energy[i] = energy[0]/(mcsteps*L**2)
+        observables.mean_energy2[i] = energy[1]/(mcsteps*L**4)
         print ('  temperature, mean_magnetization, mean_energy = %.3f, %.4f, %.4f'
                 %  (temperature, observables.mean_magnetization[i],
                     observables.mean_energy[i]))
+    observables.specific_heat = (observables.mean_energy2 - observables.mean_energy**2)*(L/T_range)**2
+    print(observables.specific_heat)
     return spin_array, observables
 
 def plot_spin_lattice(spin_array, observables):
@@ -217,8 +222,8 @@ def plot_loglog(observables):
 
 def main():
     spin_array, observables = ising2d_metropolis()
-    plot_spin_lattice(spin_array, observables)
-    plot_observables(observables)
+    #plot_spin_lattice(spin_array, observables)
+    #plot_observables(observables)
     #plot_loglog(observables)
 
 if __name__ == '__main__':

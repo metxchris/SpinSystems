@@ -3,10 +3,6 @@ Worm Algorithm for 2D Ising model.
 By Christopher Wilson.
 Written in Python 2.7.
 
-Notes:
-    The worm head is commonly referred to as 'ira', and the worm tail is
-    commonly referred to as 'masha', but we will use head and tail here.
-
 Initialize Algorithm:
     0. Start with empty grid and random worm position.
 
@@ -16,6 +12,10 @@ Worm Algorithm (one mcstep):
        Otherwise, create a new bond using the Boltzmann probability factor.
     3. End mcstep if worm.head == worm.tail.  Otherwise, repeat step 1.
     4. Measure observables.
+
+Notes:
+    The worm head is commonly referred to as 'ira', and the worm tail is
+    commonly referred to as 'masha', but we will use head and tail here.
 """
 from __future__ import division, print_function
 import numpy as np
@@ -59,9 +59,9 @@ class Worm(object):
 
 
 class Observables(object):
-    def __init__(self, L, T_range):
+    def __init__(self, L, T_range, mcsteps):
         self.L = L #lattice length.
-        self.Z = [] #partition function.
+        self.Z = mcsteps #partition function.
         self.T_range = T_range #temperature range.
         self.mean_bonds = np.zeros((L, len(T_range)))
         self.mean_energy = np.zeros((1, len(T_range)))
@@ -69,7 +69,7 @@ class Observables(object):
         self.total_iterations = np.zeros((1, len(T_range)))
 
 
-def ising2d_worm(T_start=2.269, T_end=2.269, T_step=0.1, mcsteps=5000, L=16):
+def ising2d_worm(T_start=2, T_end=2.5, T_step=0.1, mcsteps=10000, L=16):
     """
     temp = temperature [K].
     L = Length of grid.
@@ -132,15 +132,17 @@ def ising2d_worm(T_start=2.269, T_end=2.269, T_step=0.1, mcsteps=5000, L=16):
         return lattice, worm, step_correlation
 
     # initialize observables and lattice.
+    print('Initializing Worm Algorithm.')
     T_range = np.linspace(T_start, T_end, int((T_end-T_start)/T_step+1))
-    lattice, worm, observables = Lattice(L), Worm(L), Observables(L, T_range)
+    lattice, worm, observables = Lattice(L), Worm(L), Observables(L, T_range, mcsteps)
     correlation = np.zeros((L+1, len(T_range)), dtype=np.int32)
     bond_count = np.zeros(len(T_range))
+    bond_count2 = np.zeros(len(T_range))
 
-    # run simulation.
     print('Starting thermalization cycle ...')
     for step in range(int(mcsteps/5)):
         lattice, worm, step_correlation = monte_carlo_step(lattice, worm, T_start)
+
     print('Starting measurement cycle ...')
     for T_idx, T in enumerate(T_range):
         print("  ", "Starting temperature =", T, "...")
@@ -149,18 +151,22 @@ def ising2d_worm(T_start=2.269, T_end=2.269, T_step=0.1, mcsteps=5000, L=16):
             # measure observables
             correlation[:, T_idx] += step_correlation
             bond_count[T_idx] += lattice.bonds_x.sum()+lattice.bonds_y.sum()
+            bond_count2[T_idx] += (lattice.bonds_x.sum()+lattice.bonds_y.sum())**2
 
     # average and store observables.
-    observables.Z = correlation[0, :] # Also, Z = mcsteps
     observables.total_iterations = correlation.sum(axis=1)
     observables.mean_bonds = bond_count/(observables.Z*L**2)
+    observables.mean_bonds2 = bond_count2/(observables.Z*L**4)
     observables.mean_energy = -2*(1-observables.mean_bonds)
+    observables.mean_energy2 = 4*(1-observables.mean_bonds2)
+    observables.specific_heat = 4*(observables.mean_bonds2 - observables.mean_bonds**2)*(L/T_range)**2
     observables.mean_correlation = correlation/observables.Z
     #print("Temparture range = ",T_range)
     #print("Mean bonds / temperature = ", mean_bonds/temperature)
-    #print("Mean energy =", mean_energy)
+    print("Mean energy =", observables.mean_energy)
+    print("Mean energy2 =", observables.mean_energy2)
+    print("Specific heat =", observables.specific_heat)
     #print("g(|i-j|) =", correlation/observables.Z)
-
     return lattice, worm, observables
 
 def plot_bond_lattice(lattice, worm, observables):
@@ -203,8 +209,10 @@ def plot_observables(observables):
         ylim=(observables.mean_energy[0], observables.mean_energy[-1]))
     ax.set_xlabel("Temperature [K]")
     ax.set_ylabel("Energy [$k_b$]")
-    ax.set_title('$\\rm{\\bf Ising\,2D:}\,%s ^2 Grid,\,%s\,MCSteps$' 
-        % (observables.L, observables.Z[0]), fontsize=14, loc=('center'))
+    digits = int(np.log10(observables.Z))
+    ax.set_title(r'$\rm{\bf Ising\,2D:}\,%s^2 Grid,\,%.1f\!\times 10^{%u}MCSteps$'
+        % (observables.L, observables.Z/(10**digits), digits),
+        fontsize=14, loc=('center'))
     plt.subplots_adjust(bottom=0.15, top=0.9, right=0.95, left=0.15)
     ax.plot(observables.T_range, observables.mean_energy, 'bo')
 
@@ -259,17 +267,15 @@ def plot_loglog(observables):
         # refresh figure.
         ax.legend(loc='lower left')
         fig.canvas.draw_idle()
-
-    # set slider callback functions.
-    idx_slider.on_changed(slider_update) 
-    # initialize plot
-    slider_update(len(y)) 
+    
+    idx_slider.on_changed(slider_update) # set slider callback function.
+    slider_update(len(y)) # initialize plot
     plt.show()
 
 if __name__ == '__main__':
     lattice, worm, observables = ising2d_worm()
-    plot_bond_lattice(lattice, worm, observables)
-    plot_observables(observables)
-    plot_loglog(observables)
-    plt.show()
+    #plot_bond_lattice(lattice, worm, observables)
+    #plot_observables(observables)
+    #plot_loglog(observables)
+    #plt.show()
     
