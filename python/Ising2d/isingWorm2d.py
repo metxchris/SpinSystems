@@ -2,6 +2,16 @@
 Worm Algorithm for 2D Ising model.
 By Christopher Wilson.
 Written in Python 2.7.
+Algorithm adapted from: http://www.sciencedirect.com/science/article/pii/S0550321308005609
+Original Paper: http://journals.aps.org/prl/pdf/10.1103/PhysRevLett.87.160601
+
+Other references:
+    Slides - http://pitp.physics.ubc.ca/confs/sherbrooke/archives/pitpcifar_sherbrooke2008_worm_boninsegni.pdf
+    Slides - http://physics.bu.edu/py502/slides/l17.pdf
+    Analytic Paper - http://johnkerl.org/rcm/doc/ch7.pdf
+    rapid mixing - http://arxiv.org/pdf/1409.4484v1.pdf
+    bond algorithm - http://journals.aps.org/prb/pdf/10.1103/PhysRevB.27.4445
+    geometrical worm - http://www.sciencedirect.com/science/article/pii/S1875389211003300
 
 Initialize Algorithm:
     0. Start with empty grid and random worm position.
@@ -10,8 +20,9 @@ Worm Algorithm (one mcstep):
     1. Choose random nearest-neighbor site with respect to worm head.
     2. If bond between current position and new position, delete the bond.
        Otherwise, create a new bond using the Boltzmann probability factor.
-    3. End mcstep if worm.head == worm.tail.  Otherwise, repeat step 1.
-    4. Measure observables.
+    3. Add to Z if worm.head == worm.tail and measure observables.  
+    4. Always add to correlation function.
+    5. Repeat
 
 Notes:
     The worm head is commonly referred to as 'ira', and the worm tail is
@@ -19,15 +30,22 @@ Notes:
 """
 from __future__ import division, print_function
 import numpy as np
-import matplotlib.pyplot as plt
-np.random.seed(0)
+
+#Simulation Options; Tc = 2/np.log(1+np.sqrt(2)).
+T_start, T_end, T_step = 1, 4, 0.1
+L, mcsteps = 16, 5000
+
+#Output File Name
+output_name = 'isingWorm2d_16x5000'
+
 
 class Lattice(object):
     def __init__(self, L):
         """
         self.occupied will act as a pointer to either bonds_x or bonds_y.
+        All bonds are initialized as off, as opposed to the metropolis/wolff case.
         """
-        self.length = L
+        self.L = L
         self.bonds_x = np.zeros((L, L), dtype=bool)
         self.bonds_y = np.zeros((L, L), dtype=bool)
         self.occupied = np.zeros((L, L), dtype=bool)
@@ -41,7 +59,8 @@ class Worm(object):
 
     def ResetPosition(self):
         """
-        Returns randomized [i, j] indices of new worm position for both the head and tail.
+        Returns randomized [i, j] indices of new worm position 
+        for both the head (ira) and tail (masha).
         """
         new_position = np.random.randint(0, self.max_length, 2)
         self.head = new_position
@@ -49,7 +68,8 @@ class Worm(object):
 
     def Diameter(self):
         """
-        Gives minimum distance from head to tail, accounting for periodic boundaries.
+        Gives minimum distance from head to tail, 
+        accounting for periodic boundaries.
         """
         diameter_x = min(np.abs(self.head[0]-self.tail[0]), 
                          self.max_length-np.abs(self.head[0]-self.tail[0]))
@@ -61,19 +81,33 @@ class Worm(object):
 class Observables(object):
     def __init__(self, L, T_range, mcsteps):
         self.L = L #lattice length.
-        self.Z = mcsteps #partition function.
+        self.Z = [] #partition function (Z != mcsteps for worm algorithm).
+        self.mcsteps = mcsteps #monte carlo steps.
         self.T_range = T_range #temperature range.
-        self.mean_bonds = np.zeros((L, len(T_range)))
-        self.mean_energy = np.zeros((1, len(T_range)))
-        self.mean_correlation = np.zeros((L, len(T_range)))
-        self.total_iterations = np.zeros((1, len(T_range)))
+        self.correlation = np.zeros((L+1, len(T_range)))
+        self.correlation2 = np.zeros((L+1, len(T_range)))
+        self.mean_bonds = np.zeros((2, len(T_range)))
+        self.mean_energy = np.zeros((2, len(T_range)))
+        self.mean_magnetization = np.zeros((2, len(T_range)))
+        self.specific_heat = np.zeros_like(len(T_range))
+        self.susceptibility = np.zeros_like(len(T_range))
+
+    def AverageObservables(self):
+        L, T_range, Z = self.L, self.T_range, self.correlation[0, :]
+        # average and normalize observables per spin.
+        self.Z = Z
+        self.mean_bonds /= (Z*L**2)
+        self.mean_energy[0, :] = -2*(1-self.mean_bonds[0, :])
+        self.mean_magnetization[1, :] = 1-(Z*L**2/np.sum(self.correlation, axis=0))**-1
+        self.specific_heat = 4*(self.mean_bonds[1, :]
+                                -(self.mean_bonds[0, :]*L)**2)/T_range**2
+        self.susceptibility = (self.mean_magnetization[1, :]
+                                 - (self.mean_magnetization[0, :]*L)**2)/T_range
 
 
-def ising2d_worm(T_start=2, T_end=2.5, T_step=0.1, mcsteps=10000, L=16):
-    """
-    temp = temperature [K].
-    L = Length of grid.
-    """
+def ising2d_worm(T_range, mcsteps, L):
+    #T_start = T_end = 2/np.log(1 + np.sqrt(2))
+    """T = temperature [K]; L = Length of grid."""
 
     def new_head_position(worm, lattice):
         """
@@ -116,166 +150,97 @@ def ising2d_worm(T_start=2, T_end=2.5, T_step=0.1, mcsteps=10000, L=16):
     def monte_carlo_step(lattice, worm, temperature):
         """
         Since the lattice matrix is indexed as [column, row], we need to input the 
-        i, j indices in reversed order, as lattice.bond.occupied[j, i].
+        i, j indices in reversed order, as lattice.bond.occupied[j, i].  
+
+        Measured quantities per step:
+        Nb_step = number of bonds per step.
+        G_micro = 2pt correlation function per micro_step corresponding to the 
+            partition function of the worm algorithm for the 2D Ising model.
+        G_step = 2pt correlation function per step corresponding to the partition
+            function of the metropolis algorithm for the 2D Ising model.
+        * Note that G_micro(|i-j|) == G_step(|i-j|) when |i-j|=0.
         """
-        step_correlation = np.zeros(L+1, dtype=np.int32)
-        worm.ResetPosition()
-        # loop until worm head and tail meet (when step_correlation[0]==1).
-        while not step_correlation[0]:
+        Nb_step = np.zeros((2))
+        G_micro, G_step = np.zeros((L+1)), np.zeros((L+1))
+        G_step_bool = np.zeros((L+1), dtype=bool)
+        for micro_step in range(2*L**2):
             # propose head movement; [i, j] = new bond indices.
             [i, j], new_site, lattice = new_head_position(worm, lattice)
             if accept_movement(lattice.occupied[j, i], temperature):
                 # move worm head and flip the bond.
                 worm.head = new_site
                 lattice.occupied[j, i] = not lattice.occupied[j, i]
-            step_correlation[worm.Diameter()] = 1
-        return lattice, worm, step_correlation
+            # Update correlation function every microstep.
+            diameter = worm.Diameter()
+            G_micro[diameter] += 1
+            G_step_bool[diameter] = True
+            if np.all(worm.head==worm.tail):
+                # measure observables and reset worm when path is closed.
+                G_step[G_step_bool] += 1
+                G_step_bool[:] = False
+                B = lattice.bonds_x.sum()+lattice.bonds_y.sum()
+                Nb_step += B, B**2
+                worm.ResetPosition()
+        return lattice, worm, G_micro, G_step, Nb_step
 
-    # initialize observables and lattice.
+    # initialize main structures.
     print('Initializing Worm Algorithm.')
-    T_range = np.linspace(T_start, T_end, int((T_end-T_start)/T_step+1))
-    lattice, worm, observables = Lattice(L), Worm(L), Observables(L, T_range, mcsteps)
-    correlation = np.zeros((L+1, len(T_range)), dtype=np.int32)
-    bond_count = np.zeros(len(T_range))
-    bond_count2 = np.zeros(len(T_range))
+    observables = Observables(L, T_range, mcsteps)
+    lattice = Lattice(L)
+    worm = Worm(L)
+    # correlation, correlation2, and bond_number each act as a pointer.
+    correlation = observables.correlation #relates to G_micro
+    correlation2 = observables.correlation2 #relates to G_step
+    bond_number = observables.mean_bonds #relates to Nb_step
 
     print('Starting thermalization cycle ...')
     for step in range(int(mcsteps/5)):
-        lattice, worm, step_correlation = monte_carlo_step(lattice, worm, T_start)
+        lattice, worm, G_micro, G_step, Nb_step = monte_carlo_step(lattice, worm, T_range[0])
 
     print('Starting measurement cycle ...')
     for T_idx, T in enumerate(T_range):
-        print("  ", "Starting temperature =", T, "...")
+        print("  ", "Running temperature =", T, "...")
         for step in range(mcsteps):
-            lattice, worm, step_correlation = monte_carlo_step(lattice, worm, T)
-            # measure observables
-            correlation[:, T_idx] += step_correlation
-            bond_count[T_idx] += lattice.bonds_x.sum()+lattice.bonds_y.sum()
-            bond_count2[T_idx] += (lattice.bonds_x.sum()+lattice.bonds_y.sum())**2
+            lattice, worm, G_micro, G_step, Nb_step = monte_carlo_step(lattice, worm, T)
+            # sum observables
+            correlation[:, T_idx] += G_micro
+            correlation2[:, T_idx] += G_step
+            bond_number[:, T_idx] += Nb_step
 
     # average and store observables.
-    observables.total_iterations = correlation.sum(axis=1)
-    observables.mean_bonds = bond_count/(observables.Z*L**2)
-    observables.mean_bonds2 = bond_count2/(observables.Z*L**4)
-    observables.mean_energy = -2*(1-observables.mean_bonds)
-    observables.mean_energy2 = 4*(1-observables.mean_bonds2)
-    observables.specific_heat = 4*(observables.mean_bonds2 - observables.mean_bonds**2)*(L/T_range)**2
-    observables.mean_correlation = correlation/observables.Z
-    #print("Temparture range = ",T_range)
-    #print("Mean bonds / temperature = ", mean_bonds/temperature)
-    print("Mean energy =", observables.mean_energy)
-    print("Mean energy2 =", observables.mean_energy2)
-    print("Specific heat =", observables.specific_heat)
-    #print("g(|i-j|) =", correlation/observables.Z)
-    return lattice, worm, observables
+    observables.AverageObservables()
 
-def plot_bond_lattice(lattice, worm, observables):
+    print('Simulation Complete!')
+    return observables, lattice, worm
+
+def save_output(output_name, observables, lattice, worm):
     """
-    Displays the bond lattice corresponding to the most recent temperature used.
+    Save observables and lattice to pickle files.
+    The isfile checks will return an error if either one fails.
     """
-    # create bond grid for plotting
-    line_range = np.linspace(0, lattice.length, lattice.length+1)
-    x_grid, y_grid = np.meshgrid(line_range, line_range)
-    # convert boolean bond data to numeric arrays for plotting.
-    xh = x_grid[lattice.bonds_x].flatten()
-    yh = y_grid[lattice.bonds_x].flatten()
-    xv = x_grid[lattice.bonds_y].flatten()
-    yv = y_grid[lattice.bonds_y].flatten()
-    h_bonds = np.hstack((np.vstack((xh, xh+1)), np.vstack((xv, xv))))
-    v_bonds = np.hstack((np.vstack((yh, yh)), np.vstack((yv, yv+1))))
-    # initialize figure.
-    fig = plt.figure(figsize=(10, 10))
-    ax = plt.axes(xlim=(0, lattice.length), ylim=(0, lattice.length))
-    ax.set_title(r'$T = %.2f,\;\langle N_b \rangle = %.1f,\;\langle H \rangle = %.3f$' 
-        % (observables.T_range[-1], observables.mean_bonds[-1], observables.mean_energy[-1]),
-        fontsize=16, position=(0.5,-0.085))
-    plt.subplots_adjust(bottom=0.1, top=0.96, right=0.96, left=0.04)
-    # create grid (gray lines).
-    plt.plot(x_grid, y_grid, c='#dddddd', lw=1)
-    plt.plot(y_grid, x_grid, c='#dddddd', lw=1)
-    # plot bond lines.
-    plt.plot(h_bonds, v_bonds, 'r', lw=3)
-    # plot worm head and tail.
-    plt.plot(worm.tail[0], worm.tail[1], 'bs', ms=10)
-    plt.plot(worm.head[0], worm.head[1], 'g>', ms=15)
-    # disable clipping to show periodic bonds.
-    for o in fig.findobj():
-        o.set_clip_on(False)
+    import cPickle as pickle
+    from os.path import isfile
+    observables_file = ((r'data\%s.pkl') % (output_name))
+    with open(observables_file, 'wb') as output:
+        pickle.dump(observables, output, pickle.HIGHEST_PROTOCOL)
+    if isfile(observables_file):
+        print('Observables saved to: %s' % (observables_file))
+    lattice_file = ((r'data\%s_lattice.pkl') % (output_name))
+    with open(lattice_file, 'wb') as output:
+        pickle.dump(lattice, output, pickle.HIGHEST_PROTOCOL)
+    if isfile(lattice_file):
+        print('Lattice saved to: %s' % (lattice_file))
+    worm_file = ((r'data\%s_worm.pkl') % (output_name))
+    with open(lattice_file, 'wb') as output:
+        pickle.dump(worm, output, pickle.HIGHEST_PROTOCOL)
+    if isfile(worm_file):
+        print('Worm saved to: %s' % (worm_file))
 
-def plot_observables(observables):
-    fig = plt.figure(figsize=(6, 4))
-    ax = fig.add_subplot(111,
-        xlim=(observables.T_range[0], observables.T_range[-1]),
-        ylim=(observables.mean_energy[0], observables.mean_energy[-1]))
-    ax.set_xlabel("Temperature [K]")
-    ax.set_ylabel("Energy [$k_b$]")
-    digits = int(np.log10(observables.Z))
-    ax.set_title(r'$\rm{\bf Ising\,2D:}\,%s^2 Grid,\,%.1f\!\times 10^{%u}MCSteps$'
-        % (observables.L, observables.Z/(10**digits), digits),
-        fontsize=14, loc=('center'))
-    plt.subplots_adjust(bottom=0.15, top=0.9, right=0.95, left=0.15)
-    ax.plot(observables.T_range, observables.mean_energy, 'bo')
-
-def plot_loglog(observables):
-    """loglog plot for finding critical exponents."""
-    from matplotlib import rcParams # for turning off legend frame
-    from matplotlib.widgets import Slider
-    from scipy import stats
-
-    fig = plt.figure(figsize=(6,4.5))
-    ax = fig.add_subplot(111)
-    # make room for slider
-    plt.subplots_adjust(bottom=0.20, top=0.9, right=0.95, left=0.15)
-    ax.set_xlabel('$\log\,r_{ij}$', fontsize=14)
-    ax.set_ylabel('$\\rm \log\,g\\left(r_{ij}\\right)$', fontsize=14)
-    digits = int(np.log10(observables.Z))
-    ax.set_title(r'$\rm{\bf Ising\,2D:}\,%s^2 Grid,\,%.1f\!\times 10^{%u}MCSteps$'
-        % (observables.L, observables.Z/(10**digits), digits),
-        fontsize=14, loc=('center'))
-    # use only nonzero correlation values for fitting.
-    lattice_range = np.linspace(1, observables.L+1, observables.L)
-    correlation_function = observables.mean_correlation[1:,-1]
-    r = np.log(lattice_range[correlation_function>0])
-    y = np.log(correlation_function[correlation_function>0])
-    # plot correlation function.
-    correlation_plot = ax.plot(r, y, 'o', markersize=6, color='b')[0]
-    # initialize least squares fit plot.
-    least_squares_fit = ax.plot([], [], '-r', label='y=mx+b')[0]
-    rcParams['legend.frameon'] = 'False'
-    # create index slider
-    slider_axes = plt.axes([0.2, 0.03, 0.7, 0.03], axisbg='lightgoldenrodyellow')
-    idx_slider = Slider(slider_axes, '$r_{max}$', 3, len(y), valinit=len(y), 
-        facecolor='b', valfmt ='%u')
-
-    def slider_update(val):
-        # keep slider value to 3 decimal places
-        r_idx = int(val)
-        correlation_plot.set_xdata(r[0:r_idx])
-        correlation_plot.set_ydata(y[0:r_idx])
-        # least squares fit using scipy package.
-        fit_data = stats.linregress(correlation_plot.get_xdata(), correlation_plot.get_ydata())
-        slope, intercept, r_value = fit_data[0], fit_data[1], fit_data[2]
-        #fit_annotation.set_text(r'$\rm{Fit:}\; \beta = %.3f,\;r^2 = %.3f$' % (slope, r_value**2))
-        least_squares_fit.set_label(r'$\rm{Fit:}\; \xi = %.3f,\;r^2 = %.3f$'
-            % (slope, r_value**2))
-        # plot least squares fit.
-        least_squares_fit.set_ydata((slope*correlation_plot.get_xdata()+intercept))
-        least_squares_fit.set_xdata(correlation_plot.get_xdata())
-        # set new axes bounds.
-        ax.set_xlim(min(correlation_plot.get_xdata()), max(correlation_plot.get_xdata()))
-        ax.set_ylim(min(correlation_plot.get_ydata()), max(correlation_plot.get_ydata()))
-        # refresh figure.
-        ax.legend(loc='lower left')
-        fig.canvas.draw_idle()
-    
-    idx_slider.on_changed(slider_update) # set slider callback function.
-    slider_update(len(y)) # initialize plot
-    plt.show()
+def main():
+    T_range = np.arange(T_start, T_end+T_step, T_step)
+    observables, lattice, worm = ising2d_worm(T_range, mcsteps, L)
+    save_output(output_name, observables, lattice, worm)
 
 if __name__ == '__main__':
-    lattice, worm, observables = ising2d_worm()
-    #plot_bond_lattice(lattice, worm, observables)
-    #plot_observables(observables)
-    #plot_loglog(observables)
-    #plt.show()
+    main()
     

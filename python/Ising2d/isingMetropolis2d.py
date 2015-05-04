@@ -5,226 +5,139 @@ Written in Python 2.7.
 """
 from __future__ import division, print_function
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.widgets import Slider
 from random import random
+
+#Simulation Options; Tc = 2/np.log(1+np.sqrt(2)).
+T_start, T_end, T_step = 1, 4, 0.1
+L, mcsteps = 16, 5000
+
+#Output File Name
+output_name = 'isingMetro2d_16x5000'
+
+
+class Lattice(object):
+    def __init__(self, L, T_range):
+        """
+        self.spins stores the final lattice configuration for each T in T_range.
+        """
+        self.L = L
+        self.spins = np.ones((L, L, len(T_range)))
+        self.InitializeSpins(T_range[0])
+
+    def InitializeSpins(self, T_start):
+        if T_start>2:
+            print('Using random spins for initial lattice.')
+            initial_array = np.random.random_integers(0, 1, (self.L, self.L))
+            initial_array[initial_array==0] = -1
+            self.spins[:,:,-1] = initial_array
+        else:
+            print('Using ordered spins for initial lattice.')
+
 
 class Observables(object):
     def __init__(self, L, T_range, mcsteps):
         self.L = L #lattice length.
         self.Z = mcsteps #partition function.
+        self.mcsteps = mcsteps #monte carlo steps.
         self.T_range = T_range #temperature range.
-        self.mean_magnetization = np.zeros_like(T_range)
-        self.mean_magnetization2 = np.zeros_like(T_range)
-        self.mean_energy = np.zeros_like(T_range)
-        self.mean_energy2 = np.zeros_like(T_range)
+        self.mean_energy = np.zeros((2, len(T_range)))
+        self.mean_magnetization = np.zeros((2, len(T_range)))
+        self.specific_heat = np.zeros_like(len(T_range))
+        self.susceptibility = np.zeros_like(len(T_range))
+
+    def AverageObservables(self):
+        L, T_range, Z = self.L, self.T_range, self.Z
+        # average and normalize observables per spin.
+        self.mean_energy /= (Z*L**2)
+        self.mean_magnetization /= (Z*L**2)
+        self.specific_heat = (self.mean_energy[1, :]
+                                 - (self.mean_energy[0, :]*L)**2)/T_range**2
+        self.susceptibility = (self.mean_magnetization[1, :]
+                                 - (self.mean_magnetization[0, :]*L)**2)/T_range
 
 
-def ising2d_metropolis(T_start=2, T_end=2.5, T_step=0.1, mcsteps=10000, L=32):
-    """
-    temp = temperature [K].
-    L = Length of grid.
-    """
+def ising2d_metropolis(T_range, mcsteps, L):
+    """T = temperature [K].  L = Length of grid."""
 
-    def initialize_spins(L, T_start):
-        spin_array = np.ones((L, L, len(T_range)))
-        if T_start>2:
-            print('Using random spins for initial lattice.')
-            initial_array = np.random.random_integers(0, 1, (L, L))
-            initial_array[initial_array==0] = -1
-            spin_array[:,:,-1] = initial_array
-        else:
-            print('Using ordered spins for initial lattice.')
-        return spin_array
-
-    def compute_mcsteps(spin, temperature, mcsteps, L):
-        energy, energy2, magnetization, magnetization2 = 0, 0, 0, 0
-        for one_mcstep in xrange(mcsteps):
-            random_sites = np.random.random_integers(0, L-1, size=(L**2, 2))
-            # each mcstep performs L**2 updates on the square spin lattice.
-            for i in xrange(L**2):
+    def compute_mcsteps(spin_T, L, T, mcsteps):
+        """
+        The variable notation 'observable_T' denotes that quantity's value as per the
+        given temperature.  The spin array is referenced with indices in reverse order 
+        (j, i) to make the lattice plotting process easier.
+        """
+        energy_T, magnetization_T = np.zeros((2)), np.zeros((2))
+        for one_mcstep in range(mcsteps):
+            random_sites = np.random.randint(0, L, size=(L**2, 2))
+            # each mcstep performs L**2 updates on the square spin_T lattice.
+            for micro_step in range(L**2):
                 # Randomly choose a site on the grid.
-                [x, y] = random_sites[i, :]
+                [i, j] = random_sites[micro_step, :]
                 # Get neighbor indices, accounting for periodic boundaries.
-                x_prev = L-1 if x==0   else x-1
-                x_next = 0   if x==L-1 else x+1
-                y_prev = L-1 if y==0   else y-1
-                y_next = 0   if y==L-1 else y+1
+                i_prev = L-1 if i==0   else i-1
+                i_next = 0   if i==L-1 else i+1
+                j_prev = L-1 if j==0   else j-1
+                j_next = 0   if j==L-1 else j+1
                 # Calculate the proposed change in energy.
-                delta_energy = 2*spin[x, y]*(spin[x_prev, y] + spin[x_next, y] +
-                                                spin[x, y_prev] + spin[x, y_next])
+                delta_energy = 2*spin_T[j, i]*(spin_T[j, i_prev] + spin_T[j, i_next] +
+                                                spin_T[j_prev, i] + spin_T[j_next, i])
                 # Spin flip condition, the exp term is the Boltzmann factor.
-                if delta_energy<=0 or np.exp(-delta_energy/temperature)>random():
-                    spin[x, y] = -spin[x, y]
+                if delta_energy<=0 or np.exp(-delta_energy/T)>random():
+                    spin_T[j, i] = -spin_T[j, i]
             # vectorized approach to measuring observables.
-            left_spin = np.roll(spin, -1, axis=1)
-            lower_spin = np.roll(spin, 1, axis=0)
-            E = -np.sum(spin*(left_spin+lower_spin))
-            energy += E
-            energy2 += E**2
-            magnetization += np.sum(spin)
-            magnetization2 += np.sum(spin)**2
-        return spin, [abs(magnetization), magnetization2], [energy, energy2]
+            left_spin = np.roll(spin_T, -1, axis=1)
+            lower_spin = np.roll(spin_T, 1, axis=0)
+            E = -np.sum(spin_T*(left_spin+lower_spin))
+            M = np.sum(spin_T)
+            energy_T += E, E**2
+            magnetization_T += M, M**2
+        return spin_T, np.abs(magnetization_T), energy_T
 
-    print('Initializing Metropolis Algorithm.')
-    T_range = np.linspace(T_start, T_end, int((T_end-T_start)/T_step+1))
+    # initialize main structures.
     observables = Observables(L, T_range, mcsteps)
-    # store the final spin lattice configuration for each temperature iteration.
-    spin_array = initialize_spins(L, T_start)
+    lattice = Lattice(L, T_range)
+    # magnetization, energy, and spins each act as a pointer.
+    magnetization = observables.mean_magnetization
+    energy = observables.mean_energy
+    spins = lattice.spins
 
     print ('Starting thermalization cycle ...')
-    spin_array[:, :, 0], magnetization, energy = \
-        compute_mcsteps(spin_array[:, :, 0], T_start, mcsteps, L)
+    spins[:, :, -1], magnetization[:, -1], energy[:, -1] = \
+        compute_mcsteps(spins[:, :, -1], L, T_range[0], mcsteps)
 
     print ('Starting measurement cycle ...')
-    for i, temperature in enumerate(T_range):
-        spin_array[:, :, i], magnetization, energy = \
-            compute_mcsteps(spin_array[:, :, i], temperature, mcsteps, L)
-        observables.mean_magnetization[i] =  magnetization[0]/(mcsteps*L**2)
-        observables.mean_energy[i] = energy[0]/(mcsteps*L**2)
-        observables.mean_energy2[i] = energy[1]/(mcsteps*L**4)
-        print ('  temperature, mean_magnetization, mean_energy = %.3f, %.4f, %.4f'
-                %  (temperature, observables.mean_magnetization[i],
-                    observables.mean_energy[i]))
-    observables.specific_heat = (observables.mean_energy2 - observables.mean_energy**2)*(L/T_range)**2
-    print(observables.specific_heat)
-    return spin_array, observables
+    for T_idx, T in enumerate(T_range):
+        print('  Running temperature =', T, '...')
+        spins[:, :, T_idx], magnetization[:, T_idx], energy[:, T_idx] = \
+            compute_mcsteps(spins[:, :, T_idx-1], L, T, mcsteps)
 
-def plot_spin_lattice(spin_array, observables):
+    # average and store observable measurements.
+    observables.AverageObservables()
+
+    print('  Simulation Complete!')
+    return observables, lattice
+
+def save_output(output_name, observables, lattice):
     """
-    Shows the spin_array for all temperature values.
+    Save observables and lattice to pickle files.
+    The isfile checks will return an error if either one fails.
     """
-    T_range = observables.T_range
-
-    fig = plt.figure(figsize=(4.5, 5))
-    ax = fig.add_subplot(111)
-    plt.subplots_adjust(bottom=0.12, top=1)
-    ax.set_title('$\\rm{\\bf Spin\,Lattice:}\;T= %.3f\,\\rm [K]$' % (T_range[-1]),
-            fontsize=14, loc=('center'))
-    im = ax.imshow(spin_array[:,:,-1], origin='lower', interpolation='none')
-    slider_ax = plt.axes([0.2, 0.06, 0.6, 0.03], axisbg='#7F0000')
-    spin_slider = Slider(slider_ax, '', 0, len(T_range)-1, len(T_range)-1, 
-                            valfmt ='%u', facecolor='#00007F')
-
-    def update(val):
-        i = int(val)
-        ax.set_title('$\\rm{\\bf Spin\,Lattice:}\;T= %.3f\,\\rm [K]$'
-            % (T_range[i]), fontsize=14, loc=('center'))
-        im.set_array(spin_array[:,:,i])
-
-    spin_slider.on_changed(update)
-    plt.annotate('Temperature Slider', xy=(0.32,0.025), xycoords='figure fraction', fontsize=12)
-    plt.show()
-
-def plot_observables(observables):
-    """
-    Plot the mean magnetization and mean energy.
-    """
-    # unpack variables
-    T_range = observables.T_range
-    mean_magnetization = observables.mean_magnetization
-    mean_energy = observables.mean_energy
-    Z, L = observables.Z, observables.L
-    # create figure.
-    fig = plt.figure(figsize=(12, 4.5))
-    ax = fig.add_subplot(121, xlim=(min(T_range), max(T_range)),
-        ylim=(0, max(mean_magnetization)))
-    ax.set_xlabel('$\\rm Temperature$', fontsize=14)
-    ax.set_ylabel('$\\rm Magnetization$', fontsize=14)
-    ax.set_title('$\\rm{\\bf Ising\,2D:}\,%s ^2 Grid,\,%s\,MCSteps$' % (L, Z),
-        fontsize=14, loc=('center'))
-    ax.plot(T_range, mean_magnetization, 'o', ms=4, mec='#00007F', mew=1, mfc="None")
-    ax = fig.add_subplot(122, xlim=(min(T_range), max(T_range)),
-        ylim=(min(mean_energy), max(mean_energy)))
-    ax.set_xlabel('$\\rm Temperature$', fontsize=14)
-    ax.set_ylabel('$\\rm Energy$', fontsize=14)
-    ax.set_title('$\\rm{\\bf Ising\,2D:}\,%s ^2 Grid,\,%s\,MCSteps$' % (L, Z),
-        fontsize=14, loc=('center'))
-    en = ax.plot(T_range, mean_energy, 'o', ms=4, mec='#7F0000', mew=1, mfc="None")
-    plt.tight_layout()
-    plt.show()
-
-def plot_loglog(observables):
-    """
-    Estimate the critical exponent beta of the magnetization.
-    This function requires several temperature values T<Tc in order to work.
-    """
-    from matplotlib import rcParams # for turning off legend frame
-    from scipy import stats
-    # unpack variables
-    T_range = observables.T_range
-    mean_magnetization = observables.mean_magnetization
-    Z, L = observables.Z, observables.L
-    # create figure.
-    fig = plt.figure(figsize=(8,6))
-    ax = fig.add_subplot(111)
-    # make room for slider
-    plt.subplots_adjust(bottom=0.25)
-    ax.set_xlabel('$\log\,(T_c - T)$', fontsize=14)
-    ax.set_ylabel('$\\rm \log\,|M|$', fontsize=14)
-    ax.set_title(r'$\rm{\bf Ising\,2D:}\,%s^2 Grid,\,%.0G\,MCSteps$'
-        % (L, Z), fontsize=14, loc=('center'))
-    # placeholders for magnetization data and least squares fit
-    mag_plot = ax.plot(0, 0, 'o', markersize=6, color='b')[0]
-    least_squares_fit = ax.plot(0, 0, '-r', label='y=mx+b')[0]
-    fit_annotation = plt.annotate('', xy=(0.6,0.3), 
-        xycoords='figure fraction', fontsize=14)
-    # create Tc slider
-    slider_axes = plt.axes([0.2, 0.1, 0.6, 0.03], axisbg='lightgoldenrodyellow')
-    Tc_max = 2.4
-    Tc_init = min(T_range[-1], 2.244) # set to reflex my choice of Tc
-    Tc_slider = Slider(slider_axes, '$T_c$', 2.19, Tc_max, valinit=Tc_init, 
-        facecolor='b', valfmt ='%.3f K')
-    # create slider for points displayed
-    slider_axes = plt.axes([0.2, 0.05, 0.6, 0.03], axisbg='lightgoldenrodyellow')
-    number_max = 40
-    number_init = 12 # set to reflex my choice of points displayed
-    number_slider = Slider(slider_axes, r'$\rm Points$', valmin=3, valmax=number_max,
-        valinit=number_init, closedmax=True, facecolor='b', valfmt ='%u')
-    rcParams['legend.frameon'] = 'False'
-
-    def slider_update(val):
-        # keep slider value to 3 decimal places
-        Tc = round(Tc_slider.val*1000)/1000 
-        num_points=int(number_slider.val)
-        # start and end indices of plotted magnetization data
-        mag_cutoff = 0.6 # don't consider points where M < mag_cutoff
-        mag_cutoff_idx = (mean_magnetization>mag_cutoff).argmin()
-        mag_cutoff_idx = len(mean_magnetization[mean_magnetization>mag_cutoff])
-        temp_cutoff_idx = len(T_range[(Tc-T_range)>0])
-        upper_idx = min(temp_cutoff_idx, mag_cutoff_idx)
-        lower_idx = max(0, upper_idx-num_points)
-        # update plotted magnetization data based on Tc.
-        mag_plot.set_xdata(np.log(Tc-T_range[lower_idx:upper_idx]))
-        mag_plot.set_ydata(np.log(mean_magnetization[lower_idx:upper_idx]))
-        # least squares fit using scipy package.
-        fit_data = stats.linregress(mag_plot.get_xdata(), mag_plot.get_ydata())
-        slope, intercept, r_value = fit_data[0], fit_data[1], fit_data[2]
-        #fit_annotation.set_text(r'$\rm{Fit:}\; \beta = %.3f,\;r^2 = %.3f$' % (slope, r_value**2))
-        least_squares_fit.set_label(r'$\rm{Fit:}\; \beta = %.3f,\;r^2 = %.3f$'
-            % (slope, r_value**2))
-        # plot least squares fit.
-        least_squares_fit.set_ydata((slope*mag_plot.get_xdata()+intercept))
-        least_squares_fit.set_xdata(mag_plot.get_xdata())
-        # set new axes bounds.
-        ax.set_xlim(min(mag_plot.get_xdata()), max(mag_plot.get_xdata()))
-        ax.set_ylim(min(mag_plot.get_ydata()), max(mag_plot.get_ydata()))
-        # refresh figure.
-        ax.legend(loc='lower right')
-        fig.canvas.draw_idle()
-
-    # set slider callback functions.
-    Tc_slider.on_changed(slider_update) 
-    number_slider.on_changed(slider_update)
-    # initialize plot
-    slider_update(0) 
-    plt.show()
+    import cPickle as pickle
+    from os.path import isfile
+    observables_file = ((r'data\%s.pkl') % (output_name))
+    with open(observables_file, 'wb') as output:
+        pickle.dump(observables, output, pickle.HIGHEST_PROTOCOL)
+    if isfile(observables_file):
+        print('Observables saved to: %s' % (observables_file))
+    lattice_file = ((r'data\%s_lattice.pkl') % (output_name))
+    with open(lattice_file, 'wb') as output:
+        pickle.dump(lattice, output, pickle.HIGHEST_PROTOCOL)
+    if isfile(lattice_file):
+        print('Lattice saved to: %s' % (lattice_file))
 
 def main():
-    spin_array, observables = ising2d_metropolis()
-    #plot_spin_lattice(spin_array, observables)
-    #plot_observables(observables)
-    #plot_loglog(observables)
+    T_range = np.arange(T_start, T_end+T_step, T_step)
+    observables, lattice = ising2d_metropolis(T_range, mcsteps, L)
+    save_output(output_name, observables, lattice)
 
 if __name__ == '__main__':
     main()
