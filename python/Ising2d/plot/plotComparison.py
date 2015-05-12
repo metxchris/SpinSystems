@@ -13,7 +13,7 @@ data_type = np.array(["16x5000", "test"])[0]
 
 # choose any number of plots to create by changing the trailing index.
 plot_type = np.array([False, "energy", "specific_heat",
-                        "magnetization**2", "correlation"])[0]
+                        "magnetization**2", "correlation"])[1]
 
 
 #need to create an empty class with the same name as used in the pickle file.
@@ -43,20 +43,20 @@ def load_data(data_type):
         wolff = pickle.load(open('..\\data\\isingWolff2d_16x5000.pkl', 'rb'))
         metro = pickle.load(open('..\\data\\isingMetro2d_16x5000.pkl', 'rb'))
     if np.any(data_type == "test"):
-        worm = pickle.load(open('..\\data\\isingWorm2d_16x5000.pkl', 'rb'))
+        worm = pickle.load(open('..\\data\\pottsWorm2d_q3test.pkl', 'rb'))
         wolff = NaN()
         metro = NaN()
     return worm, wolff, metro
 
 def plot_comparisons(plot_type, worm, wolff, metro):
     correlation = worm.correlation
-    correlation[1:, :] /= 4*np.transpose(np.tile(np.linspace(1, worm.L, worm.L),  (1, 1)))
+    #correlation[1:, :] /= 4*np.transpose(np.tile(np.linspace(1, worm.L, worm.L),  (1, 1)))
     #correlation = np.cumsum(worm.correlation[::-1], axis=0)[::-1]
 
     def create_comparison_figure(ylabel, xlabel):
-        fig = plt.figure(figsize=(8, 6))
-        ax = fig.add_subplot(111)
-        plt.subplots_adjust(bottom=0.1, top=0.92, right=0.95, left=0.12)
+        fig = plt.figure(figsize=(6, 4))
+        ax = fig.add_subplot(111, xlim=(1,4))
+        plt.subplots_adjust(bottom=0.12, top=0.92, right=0.95, left=0.12)
         rcParams['legend.frameon'] = 'False'
         ax.set_title(r'$\rm{\bf Ising\ 2D\!\ :}\,Comparison\ of\ Averaged\ Observables$',
             fontsize=14, loc=('center'))
@@ -75,8 +75,8 @@ def plot_comparisons(plot_type, worm, wolff, metro):
             mfc="None", mec='m', mew=2, label=r'$E_{\rm Metro}\, \sim\,\langle H\rangle$')
         ax.plot(worm.T_range, worm.mean_energy[0, :], 's',
             mfc="None", mec='r', mew=2, label=r'$E_{\rm Worm}\, \sim\,\langle N_b\rangle$')
-        ax.plot(worm.T_range, 1.5*worm.T_range*np.sum(correlation, axis=0)/(correlation[1,:]*worm.L**2)-2, '^',
-            mfc="None", mec='g', mew=2, label=r'$E_{\rm Worm}\, \sim\,G(r_{ij})$')
+        #ax.plot(worm.T_range, 1.5*worm.T_range*np.sum(correlation, axis=0)/(correlation[1,:]*worm.L**2)-2, '^',
+        #    mfc="None", mec='g', mew=2, label=r'$E_{\rm Worm}\, \sim\,G(r_{ij})$')
         ax.legend(loc='upper left')
 
     if np.any(plot_type == "specific_heat"):
@@ -87,7 +87,7 @@ def plot_comparisons(plot_type, worm, wolff, metro):
             mfc="None", mec='m', mew=2, label=r'$c_{\rm\, Metro}\, \sim\,(\Delta H)^2$')
         ax.plot(worm.T_range, worm.specific_heat, 's',
             mfc="None", mec='r', mew=2, label=r'$c_{\rm\, Worm}\, \sim\,(\Delta N_b)^2$')
-        ax.legend(loc='upper left')
+        ax.legend(loc='upper right')
 
     if np.any(plot_type == "magnetization**2"):
         ax = create_comparison_figure("Magnetization**2", "Temperature")
@@ -195,11 +195,48 @@ def plot_correlation_loglog(observables):
     slider_update(True) # initialize plot
     plt.show()
 
+def plot_bond_lattice(lattice, worm, observables):
+    """
+    Displays the bond lattice corresponding to the most recent temperature used.
+    """
+    # create bond grid for plotting
+    line_range = np.linspace(0, lattice.length, lattice.length+1)
+    x_grid, y_grid = np.meshgrid(line_range, line_range)
+    # convert boolean bond data to numeric arrays for plotting.
+    xh = x_grid[lattice.bonds_x].flatten()
+    yh = y_grid[lattice.bonds_x].flatten()
+    xv = x_grid[lattice.bonds_y].flatten()
+    yv = y_grid[lattice.bonds_y].flatten()
+    h_bonds = np.hstack((np.vstack((xh, xh+1)), np.vstack((xv, xv))))
+    v_bonds = np.hstack((np.vstack((yh, yh)), np.vstack((yv, yv+1))))
+    # initialize figure.
+    fig = plt.figure(figsize=(10, 10))
+    ax = plt.axes(xlim=(0, lattice.length), ylim=(0, lattice.length))
+    ax.set_title(r'$T = %.2f,\;\langle N_b \rangle = %.1f,\;\langle H \rangle = %.3f$' 
+        % (observables.T_range[-1], observables.mean_bonds[-1], observables.mean_energy[-1]),
+        fontsize=16, position=(0.5,-0.085))
+    plt.subplots_adjust(bottom=0.1, top=0.96, right=0.96, left=0.04)
+    # create grid (gray lines).
+    plt.plot(x_grid, y_grid, c='#dddddd', lw=1)
+    plt.plot(y_grid, x_grid, c='#dddddd', lw=1)
+    # plot bond lines.
+    plt.plot(h_bonds, v_bonds, 'r', lw=3)
+    # plot worm head and tail.
+    plt.plot(worm.tail[0], worm.tail[1], 'bs', ms=10)
+    plt.plot(worm.head[0], worm.head[1], 'g>', ms=15)
+    # disable clipping to show periodic bonds.
+    for o in fig.findobj():
+        o.set_clip_on(False)
+
+
+
 def main():
     worm, wolff, metro = load_data(data_type)
 
     plot_comparisons(plot_type, worm, wolff, metro)
-    plot_correlation_loglog(worm)
+    #plot_correlation_loglog(worm)
+
+    plt.show()
 
 if __name__ == '__main__':
     main()

@@ -31,29 +31,29 @@ Notes:
 from __future__ import division, print_function
 import numpy as np
 
-#Simulation Options; Tc = 2/np.log(1+np.sqrt(2)).
+#Simulation Options; Tc = 2/np.log(1+np.sqrt(q)).
 T_start, T_end, T_step = 10, 10, 1
-L, mcsteps = 16, 1000
+q, L, mcsteps = 2, 16, 1000
 
 #Output File Name
-output_name = 'isingWorm2d_highT'
+output_name = 'pottsWorm2d_highT'
 
 
 class Lattice(object):
     def __init__(self, L):
         """
-        self.occupied will act as a pointer to either bonds_x or bonds_y.
+        Changed from isingWorm2d.py: bonds[0] = bonds_x, bonds[1] = bonds_y.
         All bonds are initialized as off, as opposed to the metropolis/wolff case.
         """
         self.L = L
-        self.bonds_x = np.zeros((L, L), dtype=bool)
-        self.bonds_y = np.zeros((L, L), dtype=bool)
-        self.occupied = np.zeros((L, L), dtype=bool)
+        self.bonds = np.zeros((2, L, L))
+        self.bond_idx = 0
 
 
 class Worm(object):
-    def __init__(self, L):
+    def __init__(self, q, L):
         self.max_length = L
+        self.q = q #number of different bond types.
         self.head = np.zeros(2)
         self.tail = np.zeros(2)
 
@@ -79,7 +79,8 @@ class Worm(object):
 
 
 class Observables(object):
-    def __init__(self, L, T_range, mcsteps):
+    def __init__(self, q, L, T_range, mcsteps):
+        self.q = q #number of spins.
         self.L = L #lattice length.
         self.Z = [] #partition function (Z != mcsteps for worm algorithm).
         self.mcsteps = mcsteps #monte carlo steps.
@@ -106,7 +107,6 @@ class Observables(object):
 
 
 def ising2d_worm(T_range, mcsteps, L):
-    #T_start = T_end = 2/np.log(1 + np.sqrt(2))
     """T = temperature [K]; L = Length of grid."""
 
     def new_head_position(worm, lattice):
@@ -116,36 +116,56 @@ def ising2d_worm(T_range, mcsteps, L):
         lattice.occupied points to either lattice.bonds_x or lattice.bonds_y.
         """
         [i, j] = worm.head
+        bond_type = np.random.randint(1, worm.q)
         direction = ["Up", "Down", "Left", "Right"][np.random.randint(0, 4)]
         if direction=="Right":
             # use current indices to check for bond
             bond = [i, j]
             site = [0 if i==L-1 else i+1, j]
-            lattice.occupied = lattice.bonds_x
+            lattice.bond_idx = 0
         elif direction=="Left":
             # use new indices to check for bond
             site = [L-1 if i==0 else i-1, j]
             bond = [site[0], site[1]]
-            lattice.occupied = lattice.bonds_x
+            lattice.bond_idx = 0
         elif direction=="Up":
             # use current indices to check for bond
             bond = [i, j]
             site = [i, 0 if j==L-1 else j+1]
-            lattice.occupied = lattice.bonds_y
+            lattice.bond_idx = 1
         elif direction=="Down":
             # use new indices to check for bond
             site = [i, L-1 if j==0 else j-1]
             bond = [site[0], site[1]]
-            lattice.occupied = lattice.bonds_y
-        return bond, site, lattice
+            lattice.bond_idx = 1
+        return bond, bond_type, site, lattice
 
-    def accept_movement(current_bond, temperature):
+    def accept_movement(current_bond, bond_type, temperature):
         """
         Bond creation/deletion using Boltzman factor.
         Bonds are always deleted since 1/exp(-2/T) > 1 for all T>0.
         """
-        accept_probability = 1 if current_bond else np.exp(-2/temperature)
-        return True if np.random.rand()<accept_probability else False
+        
+        if current_bond:
+            if current_bond==bond_type:
+                # new_bond = 0 will delete the current bond
+                accept_probability, new_bond = 1, 0
+            else:
+                accept_probability, new_bond = 1-np.exp(-2/temperature), 0
+        else:
+            accept_probability, new_bond = np.exp(-2/temperature), bond_type
+        accept_move = True if np.random.rand()<accept_probability else False
+        
+        """
+        if current_bond==bond_type:
+                accept_probability, new_bond = 1, 0
+  
+        else:
+            accept_probability, new_bond = np.exp(-2/temperature), bond_type
+        accept_move = True if np.random.rand()<accept_probability else False
+        """
+        return accept_move, new_bond
+
 
     def monte_carlo_step(lattice, worm, temperature):
         """
@@ -165,11 +185,12 @@ def ising2d_worm(T_range, mcsteps, L):
         G_step_bool = np.zeros((L+1), dtype=bool)
         for micro_step in range(2*L**2):
             # propose head movement; [i, j] = new bond indices.
-            [i, j], new_site, lattice = new_head_position(worm, lattice)
-            if accept_movement(lattice.occupied[j, i], temperature):
-                # move worm head and flip the bond.
+            [i, j], bond_type, new_site, lattice = new_head_position(worm, lattice)
+            accept_move, bond_type = accept_movement(lattice.bonds[lattice.bond_idx, j, i], bond_type, temperature)
+            if accept_move:
+                # move worm head and either change or delete the bond.
+                lattice.bonds[lattice.bond_idx, j, i] = bond_type
                 worm.head = new_site
-                lattice.occupied[j, i] = not lattice.occupied[j, i]
             # Update correlation function every microstep.
             diameter = worm.Diameter()
             G_micro[diameter] += 1
@@ -178,16 +199,16 @@ def ising2d_worm(T_range, mcsteps, L):
                 # measure observables and reset worm when path is closed.
                 G_step[G_step_bool] += 1
                 G_step_bool[:] = False
-                B = lattice.bonds_x.sum()+lattice.bonds_y.sum()
+                B=(lattice.bonds>0).sum()
                 Nb_step += B, B**2
                 worm.ResetPosition()
         return lattice, worm, G_micro, G_step, Nb_step
 
     # initialize main structures.
     print('Initializing Worm Algorithm.')
-    observables = Observables(L, T_range, mcsteps)
+    observables = Observables(q, L, T_range, mcsteps)
     lattice = Lattice(L)
-    worm = Worm(L)
+    worm = Worm(q, L)
     # correlation, correlation2, and bond_number each act as a pointer.
     correlation = observables.correlation #relates to G_micro
     correlation2 = observables.correlation2 #relates to G_step

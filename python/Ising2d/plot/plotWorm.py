@@ -9,14 +9,26 @@ from matplotlib.widgets import Slider
 from matplotlib import rcParams # for turning off legend frame
 from scipy import stats
 
-#need to create an empty class with the same name as used in the pickle file.
+input_name = 'pottsWorm2d_highT'
+
+#need to create an empty classes with the sames name as used in the pickle file.
 class Lattice(object): pass
 class Worm(object): pass
 class Observables(object): pass
 
 
 def load_data():
-    observables = pickle.load(open('..\\data\\isingWorm2d_16_5000.pkl', 'rb'))
+    import cPickle as pickle
+
+    observables_file = ((r'..\data\%s.pkl') % (input_name))
+    lattice_file = ((r'..\data\%s_lattice.pkl') % (input_name))
+    worm_file = ((r'..\data\%s_worm.pkl') % (input_name))
+
+    observables = pickle.load(open(observables_file, 'rb'))
+    lattice = pickle.load(open(lattice_file, 'rb'))
+    worm = pickle.load(open(worm_file, 'rb'))
+    return lattice, worm, observables
+
 
 def plot_correlation_loglog(observables):
     """
@@ -84,27 +96,38 @@ def plot_bond_lattice(lattice, worm, observables):
     Displays the bond lattice corresponding to the most recent temperature used.
     """
     # create bond grid for plotting
-    line_range = np.linspace(0, lattice.length, lattice.length+1)
+    line_range = np.linspace(0, lattice.L, lattice.L+1)
     x_grid, y_grid = np.meshgrid(line_range, line_range)
-    # convert boolean bond data to numeric arrays for plotting.
-    xh = x_grid[lattice.bonds_x].flatten()
-    yh = y_grid[lattice.bonds_x].flatten()
-    xv = x_grid[lattice.bonds_y].flatten()
-    yv = y_grid[lattice.bonds_y].flatten()
-    h_bonds = np.hstack((np.vstack((xh, xh+1)), np.vstack((xv, xv))))
-    v_bonds = np.hstack((np.vstack((yh, yh)), np.vstack((yv, yv+1))))
+
+
     # initialize figure.
-    fig = plt.figure(figsize=(10, 10))
-    ax = plt.axes(xlim=(0, lattice.length), ylim=(0, lattice.length))
-    ax.set_title(r'$T = %.2f,\;\langle N_b \rangle = %.1f,\;\langle H \rangle = %.3f$' 
-        % (observables.T_range[-1], observables.mean_bonds[-1], observables.mean_energy[-1]),
+    fig = plt.figure(figsize=(9, 9))
+    ax = plt.axes(xlim=(0, lattice.L), ylim=(0, lattice.L))
+    ax.set_xlabel(r'$T = %.2f,\;\langle H \rangle = %.3f$' 
+        % (observables.T_range[-1],  observables.mean_energy[0, -1]),
         fontsize=16, position=(0.5,-0.085))
     plt.subplots_adjust(bottom=0.1, top=0.96, right=0.96, left=0.04)
     # create grid (gray lines).
     plt.plot(x_grid, y_grid, c='#dddddd', lw=1)
     plt.plot(y_grid, x_grid, c='#dddddd', lw=1)
+    ax.set_title(r'$\rm{\bf High\ Temperature\ Domain\!\ }$',
+            fontsize=14, loc=('center'))
+    # convert boolean bond data to numeric arrays for plotting.
+    colors = ['aquamarine', 'midnightblue', 'skyblue', 'blueviolet', 'cadetblue', 'cornflowerblue', 'coral', 'firebrick', 'purple']
+    #colors = ['azure']*8
+
     # plot bond lines.
-    plt.plot(h_bonds, v_bonds, 'r', lw=3)
+    cm = plt.get_cmap('jet')
+    #ax.set_color_cycle([cm(1.*i/(worm.q-1)) for i in range(worm.q-1)])
+    for i in range(1, 2):
+        xh = x_grid[lattice.bonds[0]==i].flatten()
+        yh = y_grid[lattice.bonds[0]==i].flatten()
+        xv = x_grid[lattice.bonds[1]==i].flatten()
+        yv = y_grid[lattice.bonds[1]==i].flatten()
+        h_bonds = np.hstack((np.vstack((xh, xh+1)), np.vstack((xv, xv))))
+        v_bonds = np.hstack((np.vstack((yh, yh)), np.vstack((yv, yv+1))))
+        plt.plot(h_bonds, v_bonds, 'r', lw=3)
+
     # plot worm head and tail.
     plt.plot(worm.tail[0], worm.tail[1], 'bs', ms=10)
     plt.plot(worm.head[0], worm.head[1], 'g>', ms=15)
@@ -116,19 +139,22 @@ def plot_observables(observables):
     fig = plt.figure(figsize=(6, 4))
     ax = fig.add_subplot(111,
         xlim=(observables.T_range[0], observables.T_range[-1]),
-        ylim=(observables.mean_energy[0], observables.mean_energy[-1]))
+        ylim=(observables.mean_energy[0, 0], observables.mean_energy[0, -1]))
     ax.set_xlabel("Temperature [K]")
     ax.set_ylabel("Energy [$k_b$]")
-    digits = int(np.log10(observables.Z))
+    digits = int(np.log10(observables.mcsteps))
     ax.set_title(r'$\rm{\bf Ising\,2D:}\,%s^2 Grid,\,%.1f\!\times 10^{%u}MCSteps$'
-        % (observables.L, observables.Z/(10**digits), digits),
+        % (observables.L, observables.mcsteps/(10**digits), digits),
         fontsize=14, loc=('center'))
     plt.subplots_adjust(bottom=0.15, top=0.9, right=0.95, left=0.15)
-    ax.plot(observables.T_range, observables.mean_energy, 'bo')
+    ax.plot(observables.T_range, observables.mean_energy[0, :], 'bo')
 
 def main():
-    observables = load_data()
-    plot_correlation_loglog(observables)
+    lattice, worm, observables = load_data()
+    #plot_correlation_loglog(observables)
+    plot_bond_lattice(lattice, worm, observables)
+    #plot_observables(observables)
+    plt.show()
 
 if __name__ == '__main__':
     main()

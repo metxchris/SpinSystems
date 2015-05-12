@@ -1,0 +1,131 @@
+(* Content-type: application/vnd.wolfram.mathematica *)
+
+(*** Wolfram Notebook File ***)
+(* http://www.wolfram.com/nb *)
+
+(* CreatedBy='Mathematica 9.0' *)
+
+(*CacheID: 234*)
+(* Internal cache information:
+NotebookFileLineBreakTest
+NotebookFileLineBreakTest
+NotebookDataPosition[       157,          7]
+NotebookDataLength[      2855,        121]
+NotebookOptionsPosition[      2427,        102]
+NotebookOutlinePosition[      2774,        117]
+CellTagsIndexPosition[      2731,        114]
+WindowFrame->Normal*)
+
+(* Beginning of Notebook Content *)
+Notebook[{
+Cell["", "Text"],
+
+Cell[CellGroupData[{
+
+Cell[BoxData[{
+ RowBox[{"e", ":=", 
+  RowBox[{"{", 
+   RowBox[{"0", ",", "0", ",", "0"}], "}"}]}], "\[IndentingNewLine]", 
+ RowBox[{"a", ":=", 
+  RowBox[{"{", 
+   RowBox[{"0", ",", "0", ",", "1"}], "}"}]}], "\[IndentingNewLine]", 
+ RowBox[{"b", ":=", 
+  RowBox[{"{", 
+   RowBox[{"0", ",", "1", ",", "0"}], "}"}]}], "\[IndentingNewLine]", 
+ RowBox[{
+  RowBox[{
+   RowBox[{"{", 
+    RowBox[{"1", ",", "0", ",", "1"}], "}"}], " ", "--"}], 
+  " "}], "\[IndentingNewLine]", 
+ RowBox[{"\t\t"}]}], "Input",
+ CellChangeTimes->{{3.6071970090037184`*^9, 3.6071970202141104`*^9}}],
+
+Cell[BoxData[
+ RowBox[{
+  StyleBox[
+   RowBox[{"Decrement", "::", "rvalue"}], "MessageName"], 
+  RowBox[{
+  ":", " "}], "\<\"\[NoBreak]\\!\\({1, 0, 1}\\)\[NoBreak] is not a variable \
+with a value, so its value cannot be changed. \\!\\(\\*ButtonBox[\\\"\
+\[RightSkeleton]\\\", ButtonStyle->\\\"Link\\\", ButtonFrame->None, \
+ButtonData:>\\\"paclet:ref/message/General/rvalue\\\", ButtonNote -> \
+\\\"Decrement::rvalue\\\"]\\)\"\>"}]], "Message", "MSG",
+ CellChangeTimes->{3.6071970231936073`*^9}],
+
+Cell[BoxData[
+ RowBox[{
+  RowBox[{"{", 
+   RowBox[{"1", ",", "0", ",", "1"}], "}"}], "--"}]], "Output",
+ CellChangeTimes->{3.6071970231946077`*^9}]
+}, Open  ]],
+
+Cell["\<\
+{0,0,0}\t\te
+{0,0,1}\t\ta
+{0,0,2}\t\taa
+{0,1,0}\t\tb
+
+{0,1,1}
+{0,1,2}
+{0,2,0}\t\tbb, a.aabb
+{0,2,1}
+
+{0,2,2}
+{1,0,0}
+{1,0,1}\t\tbbab
+{1,0,2}
+
+{1,1,0}\t\tabaa
+{1,1,1}\t\tab, b.bbab
+{1,1,2}\t\taba
+{1,2,0}
+
+{1,2,1}\t\tbab
+{1,2,2}
+{2,0,0}
+{2,0,1}
+
+{2,0,2}
+{2,1,0}
+{2,1,1}\t\taabaa, bbabb
+{2,1,2}\t\taab
+
+{2,2,0}
+{2,2,1}\t\tabb
+{2,2,2}\t\tbaab, abba
+
+\
+\>", "Text",
+ CellChangeTimes->{{3.6071970340797276`*^9, 3.607197143360283*^9}, {
+  3.6071972052261143`*^9, 3.6071973142254343`*^9}, {3.6071973573715825`*^9, 
+  3.6071974106131887`*^9}, {3.6071974501172857`*^9, 3.607197573945029*^9}}]
+},
+WindowSize->{707, 867},
+WindowMargins->{{Automatic, 451}, {Automatic, 135}},
+FrontEndVersion->"9.0 for Microsoft Windows (64-bit) (November 20, 2012)",
+StyleDefinitions->"Default.nb"
+]
+(* End of Notebook Content *)
+
+(* Internal cache information *)
+(*CellTagsOutline
+CellTagsIndex->{}
+*)
+(*CellTagsIndex
+CellTagsIndex->{}
+*)
+(*NotebookFileOutline
+Notebook[{
+Cell[557, 20, 16, 0, 30, "Text"],
+Cell[CellGroupData[{
+Cell[598, 24, 569, 16, 112, "Input"],
+Cell[1170, 42, 496, 10, 21, "Message"],
+Cell[1669, 54, 147, 4, 31, "Output"]
+}, Open  ]],
+Cell[1831, 61, 592, 39, 676, "Text"]
+}
+]
+*)
+
+(* End of internal cache information *)
+

@@ -1,3 +1,8 @@
+"""
+Wolff Algorithm for 2D Ising model.
+By Christopher Wilson.
+Written in Python 2.7.
+"""
 from __future__ import division, print_function
 import numpy as np
 from random import random
