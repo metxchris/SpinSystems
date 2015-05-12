@@ -14,7 +14,9 @@ class Lattice(object): pass
 class Observables(object): pass
 
 def load_data():
-    observables = pickle.load(open('..\\data\\isingMetropolis2d_16_5000.pkl', 'rb'))
+    observables = pickle.load(open('..\\data\\isingMetro2d_16x5000.pkl', 'rb'))
+    lattice = pickle.load(open('..\\data\\isingMetro2d_64x1000_lattice.pkl', 'rb'))
+    return observables, lattice
 
 
 def plot_spin_lattice(spin_array, observables):
@@ -148,8 +150,9 @@ def plot_loglog(observables):
     plt.show()
 
 def main():
-    observables = load_data()
-    plot_correlation_loglog(observables)
+    observables, lattice = load_data()
+    #plot_correlation_loglog(observables)
+    plot_spin_lattice(lattice.spins, observables)
 
 if __name__ == '__main__':
     main()

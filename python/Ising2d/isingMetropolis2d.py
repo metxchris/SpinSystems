@@ -8,11 +8,11 @@ import numpy as np
 from random import random
 
 #Simulation Options; Tc = 2/np.log(1+np.sqrt(2)).
-T_start, T_end, T_step = 1, 4, 0.1
-L, mcsteps = 16, 5000
+T_start, T_end, T_step = 2.269, 2.269, 1
+L, mcsteps = 64, 1000
 
 #Output File Name
-output_name = 'isingMetro2d_16x5000'
+output_name = 'isingMetro2d_64x1000'
 
 
 class Lattice(object):
